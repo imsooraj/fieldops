@@ -1,26 +1,18 @@
-export const navigationItems = [
+export type NavigationItem = {
+  label: string;
+  path: string;
+  icon: "dashboard" | "work-orders";
+};
+
+export const navigationItems: NavigationItem[] = [
   {
-    label: 'Dashboard',
-    path: '/app/dashboard',
+    label: "Dashboard",
+    path: "/app/dashboard",
+    icon: "dashboard",
   },
   {
-    label: 'Work Orders',
-    path: '/app/work-orders',
+    label: "Work Orders",
+    path: "/app/work-orders",
+    icon: "work-orders",
   },
-  {
-    label: 'Schedule',
-    path: '/app/schedule',
-  },
-  {
-    label: 'Customers',
-    path: '/app/customers',
-  },
-  {
-    label: 'Sites',
-    path: '/app/sites',
-  },
-  {
-    label: 'Assets',
-    path: '/app/assets',
-  },
-]
+];

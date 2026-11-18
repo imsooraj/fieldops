@@ -1,0 +1,361 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../apps/api/src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WorkOrderStatus {
+  CREATED
+  ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  SUBMITTED
+  APPROVED
+  REWORK
+  CANCELLED
+  REOPENED
+}
+
+enum WorkOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  UNASSIGNED
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+}
+
+enum ReviewDecision {
+  APPROVED
+  REWORK
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  settings  Json?
+  createdAt DateTime @default(now())
+
+  memberships        Membership[]
+  customers          Customer[]
+  invitations        Invitation[]
+  idempotencyRecords IdempotencyRecord[]
+  auditLogs          AuditLog[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+
+  memberships             Membership[]
+  assignments             Assignment[]
+  sessions                Session[]
+  reviewsGiven Review[]                       @relation("ReviewReviewer")
+  sentInvitations         Invitation[]        @relation("InvitationSender")
+  idempotencyRecords      IdempotencyRecord[]
+  submittedServiceReports ServiceReport[]     @relation("ServiceReportTechnician")
+  auditLogs AuditLog[]                        @relation("AuditLogActor")
+  notifications Notification[]
+}
+
+model Membership {
+  id             String @id @default(uuid())
+  userId         String
+  organizationId String
+  role           String
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Invitation {
+  id             String    @id @default(uuid())
+  email          String
+  organizationId String
+  invitedById    String
+  role           String
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  invitedBy    User         @relation("InvitationSender", fields: [invitedById], references: [id])
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  sites        Site[]
+
+  @@index([organizationId])
+}
+
+model Site {
+  id                 String   @id @default(uuid())
+  customerId         String
+  name               String
+  address            String
+  city               String
+  state              String?
+  postalCode         String?
+  country            String
+  latitude           Float?
+  longitude          Float?
+  accessInstructions String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  assets     Asset[]
+  workOrders WorkOrder[]
+
+  @@index([customerId])
+}
+
+model Asset {
+  id                 String   @id @default(uuid())
+  siteId             String
+  name               String
+  type               String
+  serialNumber       String?
+  maintenanceDetails Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  site       Site        @relation(fields: [siteId], references: [id])
+  workOrders WorkOrder[]
+
+  @@index([siteId])
+}
+
+model WorkOrder {
+  id          String            @id @default(uuid())
+  siteId      String
+  assetId     String?
+  title       String
+  description String?
+  status      WorkOrderStatus   @default(CREATED)
+  priority    WorkOrderPriority @default(MEDIUM)
+
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site           Site            @relation(fields: [siteId], references: [id])
+  asset          Asset?          @relation(fields: [assetId], references: [id])
+  assignments    Assignment[]
+  serviceReports ServiceReport[]
+  auditLogs AuditLog[]
+
+  @@index([siteId])
+  @@index([assetId])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([priority, createdAt])
+}
+
+model Assignment {
+  id           String           @id @default(uuid())
+  workOrderId  String
+  technicianId String
+  status       AssignmentStatus @default(ASSIGNED)
+
+  assignedAt     DateTime  @default(now())
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  unassignedAt   DateTime?
+
+  workOrder  WorkOrder @relation(fields: [workOrderId], references: [id])
+  technician User      @relation(fields: [technicianId], references: [id])
+
+  @@index([workOrderId])
+  @@index([technicianId])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model IdempotencyRecord {
+  id             String @id @default(uuid())
+  key            String
+  organizationId String
+  userId         String
+
+  method      String
+  endpoint    String
+  requestHash String
+
+  status IdempotencyStatus @default(PROCESSING)
+
+  responseStatus Int?
+  responseBody   Json?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ServiceReport {
+  id           String @id @default(uuid())
+  workOrderId  String
+  technicianId String
+
+  version     Int      @default(1)
+  notes       String
+  submittedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviews Review[]
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  technician User @relation("ServiceReportTechnician", fields: [technicianId], references: [id])
+
+  @@unique([workOrderId, version])
+  @@index([workOrderId])
+  @@index([technicianId])
+  @@index([submittedAt])
+}
+
+model Review {
+  id              String         @id @default(uuid())
+  serviceReportId String
+  reviewerId      String
+
+  decision  ReviewDecision
+  comments  String?
+  reviewedAt DateTime @default(now())
+
+  serviceReport ServiceReport @relation(fields: [serviceReportId], references: [id], onDelete: Restrict)
+
+  reviewer User @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+
+  @@unique([serviceReportId])
+  @@index([reviewerId])
+  @@index([reviewedAt])
+}
+
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorId        String?
+
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  workOrderId String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  actor User? @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+
+  @@index([workOrderId])
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model OutboxEvent {
+  id          String            @id @default(uuid())
+  eventType   String
+  payload     Json
+  status      OutboxEventStatus @default(PENDING)
+  attempts    Int               @default(0)
+  availableAt DateTime          @default(now())
+  lockedAt    DateTime?
+  processedAt DateTime?
+  lastError   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status, availableAt, createdAt])
+  @@index([status, lockedAt])
+}
+

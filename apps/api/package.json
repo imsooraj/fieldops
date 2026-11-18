@@ -7,12 +7,17 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx src/worker.ts"
   },
   "dependencies": {
-    "express": "^5.3.0"
+    "argon2": "^0.45.2",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
